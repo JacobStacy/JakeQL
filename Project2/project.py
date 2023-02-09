@@ -211,7 +211,7 @@ def connect(filename):
     return Connection(filename)
 
 
-class Database():
+class Database(object):
     
     # Dictionary of tables in the database
     tables = {}
@@ -229,7 +229,7 @@ class Database():
     
 
 
-class Table():
+class Table(object):
     # Name of the table 
     name = ""
     
@@ -245,6 +245,7 @@ class Table():
     def __init__(self, name, column_headers):
         self.name = name
         self.column_headers = column_headers
+        self.rows = []
         
         for i in range(len(column_headers)):
             self.header_index[column_headers[i][0]] = i
@@ -289,7 +290,7 @@ class Table():
         return out
             
 
-class Row():
+class Row(object):
     
     # Inner data structure for the row
     data = ()
