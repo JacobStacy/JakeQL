@@ -1,14 +1,15 @@
 """
 Name: Jacob Stacy
 Netid: stacyjac
-PID: 
+PID: A61142971
 How long did this project take you?
-
+5-6 hours
 
 Sources:
-
+N/A
 """
 import string
+import operator
 
 _ALL_DATABASES = {}
 
@@ -145,7 +146,7 @@ class Connection(object):
                 new_table = Table(table_name, column_headers)
                 self.database[table_name] = new_table
                 
-                return None
+                return []
             
             case "INSERT":
                 assert tokens[1] == "INTO"
@@ -156,11 +157,21 @@ class Connection(object):
                 row = []
                 # Loop through tokens not including the closing ) and ;
                 for i in range(5, 5 + len(tokens[5:-2]), 2):
+                    
+                    # Handle 3 being 3.0 and vise versa
+                    match self.database[table_name].column_headers[int((i-5)/2)][1]:
+                        case "REAL":
+                            if tokens[i] is not None:
+                                tokens[i] = float(tokens[i])
+                        case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
+                            if tokens[i] is not None and int(tokens[i]) == tokens[i]:
+                                tokens[i] = int(tokens[i])
+                            
                     row.append(tokens[i])
                     
                 self.database[table_name].add_row(tuple(row))
                 
-                return None
+                return []
             
             case "SELECT":
                 
@@ -226,9 +237,6 @@ class Database(object):
         self.tables[key] = item
     
 
-    
-
-
 class Table(object):
     # Name of the table 
     name = ""
@@ -268,14 +276,17 @@ class Table(object):
         sorted_rows = self.rows
         
         # Sort by order_columns in reverse order
-        for i in range(1,len(order_columns) + 1):
+        # for i in range(1,len(order_columns) + 1):
             # Get index of column to sort by
-            sort_index = self.header_index[order_columns[-i]]
-            sorted_rows = sorted(self.rows, key=lambda a : a[sort_index])
+            
+        # sort_index = self.header_index[order_columns[-i]]
+        sort_indices = []
+        for column in order_columns:
+            sort_indices.append(self.header_index[column])
         
-        # Getting all rows
-        if return_columns[0] == '*':
-            return sorted_rows
+        sorted_rows.sort(key=operator.itemgetter(*sort_indices))
+        
+        
         
         # Getting specified rows
         out = []
@@ -283,7 +294,11 @@ class Table(object):
             out_row = []
             
             # Add value from each specified column to out_row
-            for column in return_columns: out_row.append(row[self.header_index[column]])
+            for column in return_columns:
+                if column == '*':
+                    out_row += row
+                else:
+                    out_row.append(row[self.header_index[column]])
             
             out.append(tuple(out_row))
             
@@ -306,18 +321,3 @@ class Row(object):
     
     def __repr__(self):
         return repr(self.data)
-
-
-# # Testing
-# sqler = connect("file")
-
-# sqler.execute("CREATE TABLE student (name TEXT, grade REAL, piazza INTEGER);")
-# sqler.execute("INSERT INTO student VALUES ('James', 4.0, 1);")
-# sqler.execute("INSERT INTO student VALUES ('Yaxin', 4.0);")
-# sqler.execute("INSERT INTO student VALUES ('Li', 3.2, 1);")
-# print(sqler.execute("SELECT name, grade FROM student ORDER BY name;"))
-# print("All:")
-# print(sqler.execute("SELECT * FROM student;"))
-
-# pass
-

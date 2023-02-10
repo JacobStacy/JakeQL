@@ -3,6 +3,7 @@ import sqlite3
 import os
 
 database = "test1.db"
+sql_file = "self.test.sql"
 sql_file = "test.tables.01.sql"
 
 try:
