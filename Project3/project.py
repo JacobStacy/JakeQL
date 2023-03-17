@@ -23,13 +23,18 @@ class Tokenizer():
         return "".join(letters)
 
 
-    def remove_leading_whitespace(self, query, tokens):
+    def remove_leading_whitespace(self, query, tokens=None):
         whitespace = self.collect_characters(query, string.whitespace)
         return query[len(whitespace):]
 
 
     def remove_word(self, query, tokens):
-        word = self.collect_characters(query, string.ascii_letters + "_" + string.digits)
+        word = self.collect_characters(query, string.ascii_letters + '_' + '.' + string.digits)
+        
+        if word == "IS":
+            if query[len(word):len(word) + 4] == " NOT":
+                word += " NOT"
+        
         if word == "NULL":
             tokens.append(None)
         else:
@@ -40,10 +45,21 @@ class Tokenizer():
     def remove_text(self, query, tokens):
         assert query[0] == "'"
         query = query[1:]
-        end_quote_index = query.find("'")
-        text = query[:end_quote_index]
-        tokens.append(text)
-        query = query[end_quote_index + 1:]
+        
+        text = []
+        while 1:
+            if query[0] == "'":
+                query = query[1:]
+                if len(query) > 0 and query[0] == "'":
+                    text.append(query[0])
+                    query = query[1:]
+                    continue
+                break
+            
+            text.append(query[0])
+            query = query[1:]
+            
+        tokens.append("".join(text))
         return query
 
     def remove_number(self, query, tokens):
@@ -80,14 +96,18 @@ class Tokenizer():
                 continue
 
             # Handle keywords
-            if query[0] in (string.ascii_letters + "_"):
+            if query[0] in (string.ascii_letters + '_'):
                 query = self.remove_word(query, tokens)
                 continue
 
             # Handle misc char
-            if query[0] in "(),;*=":
-                tokens.append(query[0])
-                query = query[1:]
+            if query[0] in "(),;*!=><":
+                if query[0] == '!' and query[1] == "=":
+                    tokens.append(query[0:2])
+                    query = query[2:]
+                else:
+                    tokens.append(query[0])
+                    query = query[1:]
                 continue
 
             # Handle text
@@ -150,68 +170,177 @@ class Connection(object):
             
             case "INSERT":
                 assert tokens[1] == "INTO"
-                table_name = tokens[2]
-                assert table_name in self.database
-                assert tokens[3] == "VALUES"
+                tokens = tokens[2:]
                 
-                row = []
-                # Loop through tokens not including the closing ) and ;
-                for i in range(5, 5 + len(tokens[5:-2]), 2):
+                assert tokens[0] in self.database
+                table = self.database[tokens[0]]
+                tokens = tokens[1:]
+                
+                
+                insert_columns = []
+                if tokens[0] != "VALUES":
+                    while 1:
+                        if tokens[0] == '(' or tokens[0] == ',':
+                            tokens = tokens[1:]
+                            continue
+                        
+                        if tokens[0] == ')':
+                            tokens = tokens[1:]
+                            break
+                        
+                        insert_columns.append(tokens[0])
+                        tokens = tokens[1:]
+                
+                assert tokens[0] == "VALUES"
+                tokens = tokens[1:]
+                
+                rows = []                
+                # Get all values for each row
+                while 1:
+                    values = []
                     
-                    # Handle 3 being 3.0 and vise versa
-                    match self.database[table_name].column_headers[int((i-5)/2)][1]:
-                        case "REAL":
-                            if tokens[i] is not None:
-                                tokens[i] = float(tokens[i])
-                        case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
-                            if tokens[i] is not None and int(tokens[i]) == tokens[i]:
-                                tokens[i] = int(tokens[i])
+                    if tokens[0] == ',':
+                        tokens = tokens[1:]
+                        continue
+                    
+                    if tokens[0] == ';':
+                        break
+                    
+                    value_i = 0
+                    while 1:
+                        
+                        if tokens[0] == '(' or tokens[0] == ',':
+                            tokens = tokens[1:]
+                            continue
+                        
+                        if tokens[0] == ')':
+                            tokens = tokens[1:]
+                            break
+                        
+                        if len(insert_columns) == 0:
+                            col_type = table.column_headers[value_i][1]
+                        else:
+                            col_type = table.column_headers[table.header_index[insert_columns[value_i]]][1]
                             
-                    row.append(tokens[i])
+                        # Handle 3 being 3.0 and vise versa
+                        match col_type:
+                            case "REAL":
+                                if tokens[0] is not None:
+                                    tokens[0] = float(tokens[0])
+                            case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
+                                if tokens[0] is not None and int(tokens[0]) == tokens[0]:
+                                    tokens[0] = int(tokens[0])
+                        
+                        values.append(tokens[0])
+                        tokens = tokens[1:]
+                        value_i +=1
                     
-                self.database[table_name].add_row(tuple(row))
+                    rows.append(values)
+                    
+                table.add_rows(rows, insert_columns)
+                    
+                    
+                    
+                
                 
                 return []
             
+                    
             case "SELECT":
                 
                 return_columns = []
+                distinct = False
                 
-                table_name_index = None
+                table_name = None
                 # Get name of columns that will be returned
-                for i in range(1, len(tokens)):
+                while 1:
                     # Skip ','
-                    if tokens[i] == ',': continue
+                    if tokens[0] == ',' or tokens[0] == "SELECT": 
+                        tokens = tokens[1:]
+                        continue
+                    
+                    # Catch DISTINCT
+                    if tokens[0] == "DISTINCT":
+                        distinct = True
+                        tokens = tokens[1:]
+                        continue
                     
                     # Stop at FROM
-                    if tokens[i] == "FROM": 
-                        table_name_index = i + 1 # Grab table name index
+                    if tokens[0] == "FROM": 
+                        table_name = tokens[1]
+                        tokens = tokens[2:]
                         break
                     
-                    return_columns.append(tokens[i])
+                    return_columns.append(tokens[0])
+                    tokens = tokens[1:]
                 
-                assert tokens[table_name_index] in self.database
-                
-                orderby_offset = table_name_index + 1
-                if tokens[table_name_index + 1] == "ORDER" and tokens[table_name_index + 2] == "BY":
-                    orderby_offset = table_name_index + 3
+                assert table_name in self.database
+                table = self.database[table_name]
+                                    
+                # Get WHERE clause
+                where_clause = []
+                while 1:
+                    if tokens[0] == "ORDER" or tokens[0] == ';':
+                        break
                     
-                
+                    where_clause.append(tokens[0])
+                    tokens = tokens[1:]
+                        
                 order_columns = []
-                # Get ORDER BY columns
-                for token in tokens[orderby_offset : -1]:
-                    if token == ',': continue # Skip ','
-                    order_columns.append(token)
-                    
                 
-                return self.database[tokens[table_name_index]].get_data(return_columns, order_columns)
+                while 1:
+                        if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] == ',' :
+                            tokens = tokens[1:]
+                            continue
+                        if tokens[0] == ';':
+                            break
+                        
+                        order_columns.append(tokens[0])
+                        tokens = tokens[1:]
+                
+                return table.get_data(return_columns, order_columns,where_clause, distinct)
             
             case "UPDATE":
                 return_columns = []
                 
-                table_name_index = None
+                assert tokens[1] in self.database
+                assert tokens[2] == "SET"
                 
-                assert tokens[table_name_index] in self.database
+                table = self.database[tokens[1]]   
+                
+                tokens = tokens[3:]
+                
+                column_headers = []
+                values = []
+                # Get column headers and values
+                while 1:
+                    if tokens[0] == ',':
+                        tokens = tokens[1:]
+                        continue
+                    
+                    if tokens[0] == "WHERE" or tokens[0] == ';':
+                        break
+                    
+                    assert tokens[1] == '='
+                    
+                    column_headers.append(tokens[0])
+                    values.append(tokens[2])
+                    
+                    tokens = tokens[3:]
+                
+                self.database.set_data(column_headers,values,tokens, table)
+                
+                return []
+            
+            case "DELETE":
+                assert tokens[1] == "FROM"
+                table = self.database[tokens[2]]
+                table.remove_rows(tokens[3:])
+                
+                return []
+                
+                
+                
                 
                 
             
@@ -236,6 +365,8 @@ class Database(object):
     # Dictionary of tables in the database
     tables = {}
     
+    
+    
     def __getitem__(self, key):
         return self.tables[key]
     
@@ -244,6 +375,68 @@ class Database(object):
     
     def __setitem__(self, key, item):
         self.tables[key] = item
+        
+        
+    def where(self, where_clause):
+        assert where_clause[0] == "WHERE"
+        
+        test_column = self.header_index[where_clause[1]]
+        test_value = where_clause[3]
+        
+        if test_value == "NULL":
+            test_value = None
+        
+        
+        out_rows = []
+        match where_clause[2]:
+            case '=':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] == test_value:
+                        out_rows.append(i)
+            case "!=":
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] != test_value:
+                        out_rows.append(i)
+            case '>':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] > test_value:
+                        out_rows.append(i)
+            case '<':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] < test_value:
+                        out_rows.append(i)
+            case 'IS':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] is test_value:
+                        out_rows.append(i)
+            case 'IS NOT':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] is not test_value:
+                        out_rows.append(i)
+        return out_rows
+
+    def set_data(self, column_names, values, where_clause, default_table):
+        
+        columns = []
+        for name in column_names:
+            if '.' not in name:
+                columns.append((default_table, default_table.header_index[name]))
+            else:
+                dot_index = name.index('.')
+                table = self.tables[name[:dot_index]]
+                column_index = table.header_index[dot_index + 1:]
+                columns.append((table, column_index))
+                
+        
+        if where_clause[0] == "WHERE":
+            for i in self.where(where_clause):
+                for j in range(len(columns)):
+                    self.rows[i][columns[j]] = values[j]
+        else:
+            for i in range(len(self.rows)):
+                for j in range(len(columns)):
+                    self.rows[i][columns[j]] = values[j]
+                    
     
 
 class Table(object):
@@ -270,31 +463,106 @@ class Table(object):
     def __str__(self):
         return str(self.rows)
     
+    def where(self, where_clause):
+        assert where_clause[0] == "WHERE"
+        
+        test_column = self.header_index[where_clause[1]]
+        test_value = where_clause[3]
+        
+        if test_value == "NULL":
+            test_value = None
+        
+        
+        out_rows = []
+        match where_clause[2]:
+            case '=':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] == test_value:
+                        out_rows.append(i)
+            case "!=":
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] != test_value:
+                        out_rows.append(i)
+            case '>':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] > test_value:
+                        out_rows.append(i)
+            case '<':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] < test_value:
+                        out_rows.append(i)
+            case 'IS':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] is test_value:
+                        out_rows.append(i)
+            case 'IS NOT':
+                for i in range(len(self.rows)):
+                    if self.rows[i][test_column] is not test_value:
+                        out_rows.append(i)
+        return out_rows
+    
     # Add a row to the table
-    def add_row(self, data):
-        self.rows.append(Row(data))
+    def add_row(self, data, insert_columns=[]):
+        if len(insert_columns) == 0:
+            self.rows.append(Row(data))
+        else:
+            row_data = [None] * len(self.column_headers)
+            for i in range(len(insert_columns)):
+                row_data[self.header_index[insert_columns[i]]] = data[i]
+                
+            self.rows.append(Row(row_data))
+               
     
     # Add several rows to the table
-    def add_rows(self, data_entries):
+    def add_rows(self, data_entries, insert_columns=[]):
         for data in data_entries:
-            self.rows.append(Row(data))
+            self.add_row(data, insert_columns)
+            
+    def remove_rows(self, where_clause):
+        
+        if where_clause[0] == "WHERE":
+            for i in reversed(self.where(where_clause)):
+                del self.rows[i]
+        else:
+            self.rows = []
+            
+                
             
     # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns, order_columns):
+    def get_data(self, return_columns, order_columns, where_clause, distinct):
         
-        sorted_rows = self.rows
+        valid_rows = self.rows
+        if len(where_clause) > 0 and where_clause[0] == "WHERE":
+            valid_rows = [self.rows[i] for i in self.where(where_clause)]
         
-        # Sort by order_columns in reverse order
-        # for i in range(1,len(order_columns) + 1):
-            # Get index of column to sort by
+        if distinct:
+            new_rows = []
+            order_i = self.header_index[order_columns[0]]
+            for row in valid_rows:
+                valid = True
+                for unique_row in new_rows:
+                    if row[order_i] == unique_row[order_i]:
+                        valid = False
+                        
+                if valid:
+                    new_rows.append(row)
+                    
+            valid_rows = new_rows
             
-        # sort_index = self.header_index[order_columns[-i]]
+        
+        
         sort_indices = []
         for column in order_columns:
-            sort_indices.append(self.header_index[column])
+            if '.' in column:
+                dot_index = column.index('.')
+                table_name = column[:dot_index]
+                column_name = column[dot_index + 1:]
+                sort_indices.append(self.header_index[column_name])
+            else:
+                sort_indices.append(self.header_index[column])
         
+        sorted_rows = valid_rows
         sorted_rows.sort(key=operator.itemgetter(*sort_indices))
-        
         
         
         # Getting specified rows
@@ -310,20 +578,23 @@ class Table(object):
                     out_row.append(row[self.header_index[column]])
             
             out.append(tuple(out_row))
-            
+                    
         return out
             
 
 class Row(object):
     
     # Inner data structure for the row
-    data = ()
+    data = []
 
     def __init__(self, data):
-        self.data = tuple(data)
+        self.data = list(data)
     
     def __getitem__(self, key):
         return self.data[key]
+    
+    def __setitem__(self, key, value):
+        self.data[key] = value
     
     def __str__(self):
         return str(self.data)
