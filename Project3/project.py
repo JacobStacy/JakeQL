@@ -298,7 +298,7 @@ class Connection(object):
                         order_columns.append(tokens[0])
                         tokens = tokens[1:]
                 
-                return table.get_data(return_columns, order_columns,where_clause, distinct)
+                return self.database.get_data(return_columns, order_columns,where_clause, distinct, table)
             
             case "UPDATE":
                 return_columns = []
@@ -377,42 +377,52 @@ class Database(object):
         self.tables[key] = item
         
         
-    def where(self, where_clause):
+    def where(self, where_clause, default_table):
         assert where_clause[0] == "WHERE"
         
-        test_column = self.header_index[where_clause[1]]
+        test_table = default_table
+        test_column = where_clause[1]   
         test_value = where_clause[3]
+        
+        if '.' in test_column:
+            dot_index = test_column.index('.')
+            table = self.tables[test_column[:dot_index]]
+            column_index = table.header_index[dot_index + 1:]
+            
+            test_table = table
+            test_column = column_index
         
         if test_value == "NULL":
             test_value = None
         
+        test_column = test_table.header_index[test_column]
         
         out_rows = []
         match where_clause[2]:
             case '=':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] == test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] == test_value:
+                        out_rows.append((test_table, i))
             case "!=":
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] != test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] != test_value:
+                        out_rows.append(test_table, i)
             case '>':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] > test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] > test_value:
+                        out_rows.append(test_table, i)
             case '<':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] < test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] < test_value:
+                        out_rows.append(test_table, i)
             case 'IS':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] is test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] is test_value:
+                        out_rows.append(test_table, i)
             case 'IS NOT':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] is not test_value:
-                        out_rows.append(i)
+                for i in range(len(test_table.rows)):
+                    if test_table.rows[i][test_column] is not test_value:
+                        out_rows.append(test_table, i)
         return out_rows
 
     def set_data(self, column_names, values, where_clause, default_table):
@@ -429,13 +439,67 @@ class Database(object):
                 
         
         if where_clause[0] == "WHERE":
-            for i in self.where(where_clause):
+            valid_rows = self.where(where_clause, default_table)
+            for table, i in valid_rows:
                 for j in range(len(columns)):
-                    self.rows[i][columns[j]] = values[j]
+                    table.rows[i][columns[j][1]] = values[j]
         else:
-            for i in range(len(self.rows)):
+            for i in range(len(default_table.rows)):
                 for j in range(len(columns)):
-                    self.rows[i][columns[j]] = values[j]
+                    columns[j][0].rows[i][columns[j][1]] = values[j]
+                    
+    # Gets specified columns ordered by a specified column
+    def get_data(self, return_columns, order_columns, where_clause, distinct, default_table):
+        
+        valid_rows = self.rows
+        if len(where_clause) > 0 and where_clause[0] == "WHERE":
+            valid_rows = [self.rows[i] for i in self.where(where_clause)]
+        
+        if distinct:
+            new_rows = []
+            order_i = self.header_index[order_columns[0]]
+            for row in valid_rows:
+                valid = True
+                for unique_row in new_rows:
+                    if row[order_i] == unique_row[order_i]:
+                        valid = False
+                        
+                if valid:
+                    new_rows.append(row)
+                    
+            valid_rows = new_rows
+            
+        
+        
+        sort_indices = []
+        for column in order_columns:
+            if '.' in column:
+                dot_index = column.index('.')
+                table_name = column[:dot_index]
+                column_name = column[dot_index + 1:]
+                sort_indices.append(self.header_index[column_name])
+            else:
+                sort_indices.append(self.header_index[column])
+        
+        sorted_rows = valid_rows
+        sorted_rows.sort(key=operator.itemgetter(*sort_indices))
+        
+        
+        # Getting specified rows
+        out = []
+        for row in sorted_rows:
+            out_row = []
+            
+            # Add value from each specified column to out_row
+            for column in return_columns:
+                if column == '*':
+                    out_row += row
+                else:
+                    out_row.append(row[self.header_index[column]])
+            
+            out.append(tuple(out_row))
+                    
+        return out
                     
     
 
@@ -527,59 +591,6 @@ class Table(object):
             self.rows = []
             
                 
-            
-    # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns, order_columns, where_clause, distinct):
-        
-        valid_rows = self.rows
-        if len(where_clause) > 0 and where_clause[0] == "WHERE":
-            valid_rows = [self.rows[i] for i in self.where(where_clause)]
-        
-        if distinct:
-            new_rows = []
-            order_i = self.header_index[order_columns[0]]
-            for row in valid_rows:
-                valid = True
-                for unique_row in new_rows:
-                    if row[order_i] == unique_row[order_i]:
-                        valid = False
-                        
-                if valid:
-                    new_rows.append(row)
-                    
-            valid_rows = new_rows
-            
-        
-        
-        sort_indices = []
-        for column in order_columns:
-            if '.' in column:
-                dot_index = column.index('.')
-                table_name = column[:dot_index]
-                column_name = column[dot_index + 1:]
-                sort_indices.append(self.header_index[column_name])
-            else:
-                sort_indices.append(self.header_index[column])
-        
-        sorted_rows = valid_rows
-        sorted_rows.sort(key=operator.itemgetter(*sort_indices))
-        
-        
-        # Getting specified rows
-        out = []
-        for row in sorted_rows:
-            out_row = []
-            
-            # Add value from each specified column to out_row
-            for column in return_columns:
-                if column == '*':
-                    out_row += row
-                else:
-                    out_row.append(row[self.header_index[column]])
-            
-            out.append(tuple(out_row))
-                    
-        return out
             
 
 class Row(object):
