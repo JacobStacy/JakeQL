@@ -16,9 +16,9 @@ sql_files = [
                 "test.insert-columns.01.sql",
                 "test.insert-columns.02.sql",
                 "test.insert-columns.03.sql",
-                # "test.join.01.sql",
-                # "test.join.02.sql",
-                # "test.join.03.sql",
+                "test.join.01.sql",
+                "test.join.02.sql",
+                "test.join.03.sql",
                 "test.multi-insert.01.sql",
                 "test.multi-insert.02.sql",
                 "test.multi-insert.03.sql",
@@ -33,8 +33,8 @@ sql_files = [
                 "test.where.01.sql",
                 "test.where.02.sql",
                 "test.where.03.sql",
-                # "test.where.04.sql",
-                # "test.where.05.sql"
+                "test.where.04.sql",
+                "test.where.05.sql"
              ]
 
 for sql_file in sql_files:

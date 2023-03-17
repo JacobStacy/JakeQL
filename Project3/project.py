@@ -238,11 +238,6 @@ class Connection(object):
                     rows.append(values)
                     
                 table.add_rows(rows, insert_columns)
-                    
-                    
-                    
-                
-                
                 return []
             
                     
@@ -276,6 +271,20 @@ class Connection(object):
                 
                 assert table_name in self.database
                 table = self.database[table_name]
+                
+                left_outer_join = []
+                # Catch LEFT OUTER JOIN
+                if tokens[0] == "LEFT":
+                    assert tokens[1] == "OUTER"
+                    assert tokens[2] == "JOIN"
+                    tokens = tokens[3:]
+                    
+                    right_table = tokens[0]
+                    assert tokens[1] == "ON"
+                    left_column = tokens[2]
+                    right_column = tokens[4]
+                    tokens = tokens[5:]
+                    left_outer_join = [table_name, right_table, left_column, right_column]
                                     
                 # Get WHERE clause
                 where_clause = []
@@ -286,8 +295,8 @@ class Connection(object):
                     where_clause.append(tokens[0])
                     tokens = tokens[1:]
                         
+                # Get ORDER BY columns
                 order_columns = []
-                
                 while 1:
                         if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] == ',' :
                             tokens = tokens[1:]
@@ -298,7 +307,7 @@ class Connection(object):
                         order_columns.append(tokens[0])
                         tokens = tokens[1:]
                 
-                return self.database.get_data(return_columns, order_columns,where_clause, distinct, table)
+                return self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join)
             
             case "UPDATE":
                 return_columns = []
@@ -334,16 +343,9 @@ class Connection(object):
             
             case "DELETE":
                 assert tokens[1] == "FROM"
-                table = self.database[tokens[2]]
-                table.remove_rows(tokens[3:])
+                self.database.remove_data(tokens[3:], self.database[tokens[2]])
                 
                 return []
-                
-                
-                
-                
-                
-            
 
     def close(self):
         """
@@ -365,8 +367,6 @@ class Database(object):
     # Dictionary of tables in the database
     tables = {}
     
-    
-    
     def __getitem__(self, key):
         return self.tables[key]
     
@@ -384,14 +384,15 @@ class Database(object):
         test_column = where_clause[1]   
         test_value = where_clause[3]
         
+        # Handle qualifier
         if '.' in test_column:
             dot_index = test_column.index('.')
             table = self.tables[test_column[:dot_index]]
-            column_index = table.header_index[dot_index + 1:]
             
+            test_column = test_column[dot_index + 1:]
             test_table = table
-            test_column = column_index
         
+        # Replace NULL
         if test_value == "NULL":
             test_value = None
         
@@ -401,29 +402,60 @@ class Database(object):
         match where_clause[2]:
             case '=':
                 for i in range(len(test_table.rows)):
-                    if test_table.rows[i][test_column] == test_value:
+                    if (value:=test_table.rows[i][test_column]) is not None and value == test_value:
                         out_rows.append((test_table, i))
             case "!=":
                 for i in range(len(test_table.rows)):
-                    if test_table.rows[i][test_column] != test_value:
-                        out_rows.append(test_table, i)
+                    if (value:=test_table.rows[i][test_column]) is not None and value != test_value:
+                        out_rows.append((test_table, i))
             case '>':
                 for i in range(len(test_table.rows)):
-                    if test_table.rows[i][test_column] > test_value:
-                        out_rows.append(test_table, i)
+                    if (value:=test_table.rows[i][test_column]) is not None and value > test_value:
+                        out_rows.append((test_table, i))
             case '<':
                 for i in range(len(test_table.rows)):
-                    if test_table.rows[i][test_column] < test_value:
-                        out_rows.append(test_table, i)
+                    if (value:=test_table.rows[i][test_column]) is not None and value < test_value:
+                        out_rows.append((test_table, i))
             case 'IS':
                 for i in range(len(test_table.rows)):
                     if test_table.rows[i][test_column] is test_value:
-                        out_rows.append(test_table, i)
+                        out_rows.append((test_table, i))
             case 'IS NOT':
                 for i in range(len(test_table.rows)):
                     if test_table.rows[i][test_column] is not test_value:
-                        out_rows.append(test_table, i)
+                        out_rows.append((test_table, i))
         return out_rows
+    
+    def left_outer_join(self, join_data):
+        # [left_table, right_table, left_column, right_column]
+        left_table = self.tables[join_data[0]]
+        right_table = self.tables[join_data[1]]
+        left_column_i = left_table.header_index[join_data[2][join_data[2].index('.') + 1:]]
+        right_column_i = right_table.header_index[join_data[3][join_data[3].index('.') + 1:]]
+        
+        # Get headers from both tables
+        headers = [("".join([left_table.name, '.', header[0]]), header[1]) for header in left_table.column_headers]
+        left_headers = [header[0] for header in headers] # Save for later
+        headers.extend([("".join([right_table.name, '.', header[0]]), header[1]) for header in right_table.column_headers])
+        
+        # Create fake table to use for joined data
+        temp_table = Table("temp", headers)
+        
+        for left_row in left_table.rows:
+            
+            if (value:=left_row[left_column_i]) is not None:
+                last_len = len(temp_table.rows)
+                
+                for right_row in right_table.rows:
+                    if value == right_row[right_column_i]:
+                        temp_table.add_row(left_row.data + right_row.data)
+                        break
+                    
+                if len(temp_table.rows) == last_len:
+                    temp_table.add_row(left_row.data, left_headers)
+               
+        return temp_table
+        
 
     def set_data(self, column_names, values, where_clause, default_table):
         
@@ -448,19 +480,11 @@ class Database(object):
                 for j in range(len(columns)):
                     columns[j][0].rows[i][columns[j][1]] = values[j]
                     
+                    
     # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table):
-        
-        valid_rows_mixed = []
-        valid_rows = default_table.rows
-        if len(where_clause) > 0 and where_clause[0] == "WHERE":
-            for table, i in self.where(where_clause, default_table):
-                valid_rows_mixed.append((table,i))
-            
-            
-            for row in valid_rows_mixed:
-                valid_rows.append(row[0].rows[row[1]])
-        
+    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table, left_outer_join_data=[]):
+    
+        # Account for qualifier in ordered_columns
         order_columns = []
         for column in order_columns_mixed:
             if '.' not in column:
@@ -470,7 +494,8 @@ class Database(object):
                 table = self.tables[column[:dot_index]]
                 column_name = column[dot_index + 1:]
                 order_columns.append((table, column_name))
-                
+              
+        # Account for qualifier in return_columns  
         return_columns = []
         for column in return_columns_mixed:
             if '.' not in column:
@@ -481,6 +506,36 @@ class Database(object):
                 column_name = column[dot_index + 1:]
                 return_columns.append((table, column_name))
         
+        # Handle Join
+        if len(left_outer_join_data) > 0:
+            out = []
+            join_table = self.left_outer_join(left_outer_join_data)
+            
+            sort_indices = []
+            for column in order_columns:
+                sort_indices.append(join_table.header_index['.'.join([column[0].name, column[1]])])
+            
+            for row in sorted(join_table.rows, key=operator.itemgetter(*sort_indices)):
+                out_row = []
+                for table, column_name in return_columns:
+                    out_row.append(row[join_table.header_index['.'.join([table.name, column_name])]])
+                out.append(tuple(out_row))
+            return out
+            
+        
+        # Handle WHERE
+        valid_rows_mixed = []
+        valid_rows = default_table.rows
+        if len(where_clause) > 0 and where_clause[0] == "WHERE":
+            valid_rows = []
+            
+            for table, i in self.where(where_clause, default_table):
+                valid_rows_mixed.append((table,i))
+                
+            for row in valid_rows_mixed:
+                valid_rows.append(row[0].rows[row[1]])
+        
+        # Handle DISTINCT
         if distinct:
             new_rows = []
             order_i = order_columns[0][0].header_index[order_columns[0][1]]
@@ -495,15 +550,13 @@ class Database(object):
                     
             valid_rows = new_rows
             
-        
-        
+        # Get index of each order by column
         sort_indices = []
         for column in order_columns:
             sort_indices.append(column[0].header_index[column[1]])
         
         sorted_rows = valid_rows
         sorted_rows.sort(key=operator.itemgetter(*sort_indices))
-        
         
         # Getting specified rows
         out = []
@@ -520,6 +573,15 @@ class Database(object):
             out.append(tuple(out_row))
                     
         return out
+    
+    # Remove rows
+    def remove_data(self, where_clause, default_table):
+        
+        if where_clause[0] == "WHERE":
+            for table, i in reversed(self.where(where_clause, default_table)):
+                del table.rows[i]
+        else:
+            default_table.rows = []
                     
     
 
@@ -541,49 +603,13 @@ class Table(object):
         self.column_headers = column_headers
         self.rows = []
         
+        self.header_index = {}
         for i in range(len(column_headers)):
             self.header_index[column_headers[i][0]] = i
     
     def __str__(self):
         return str(self.rows)
     
-    def where(self, where_clause):
-        assert where_clause[0] == "WHERE"
-        
-        test_column = self.header_index[where_clause[1]]
-        test_value = where_clause[3]
-        
-        if test_value == "NULL":
-            test_value = None
-        
-        
-        out_rows = []
-        match where_clause[2]:
-            case '=':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] == test_value:
-                        out_rows.append(i)
-            case "!=":
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] != test_value:
-                        out_rows.append(i)
-            case '>':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] > test_value:
-                        out_rows.append(i)
-            case '<':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] < test_value:
-                        out_rows.append(i)
-            case 'IS':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] is test_value:
-                        out_rows.append(i)
-            case 'IS NOT':
-                for i in range(len(self.rows)):
-                    if self.rows[i][test_column] is not test_value:
-                        out_rows.append(i)
-        return out_rows
     
     # Add a row to the table
     def add_row(self, data, insert_columns=[]):
@@ -594,6 +620,7 @@ class Table(object):
             for i in range(len(insert_columns)):
                 row_data[self.header_index[insert_columns[i]]] = data[i]
                 
+                    
             self.rows.append(Row(row_data))
                
     
@@ -602,16 +629,7 @@ class Table(object):
         for data in data_entries:
             self.add_row(data, insert_columns)
             
-    def remove_rows(self, where_clause):
-        
-        if where_clause[0] == "WHERE":
-            for i in reversed(self.where(where_clause)):
-                del self.rows[i]
-        else:
-            self.rows = []
-            
-                
-            
+    
 
 class Row(object):
     
