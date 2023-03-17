@@ -29,7 +29,7 @@ class Tokenizer():
 
 
     def remove_word(self, query, tokens):
-        word = self.collect_characters(query, string.ascii_letters + '_' + '.' + string.digits)
+        word = self.collect_characters(query, string.ascii_letters + '_' + '.' + '*' + string.digits)
         
         if word == "IS":
             if query[len(word):len(word) + 4] == " NOT":
@@ -449,15 +449,41 @@ class Database(object):
                     columns[j][0].rows[i][columns[j][1]] = values[j]
                     
     # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns, order_columns, where_clause, distinct, default_table):
+    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table):
         
-        valid_rows = self.rows
+        valid_rows_mixed = []
+        valid_rows = default_table.rows
         if len(where_clause) > 0 and where_clause[0] == "WHERE":
-            valid_rows = [self.rows[i] for i in self.where(where_clause)]
+            for table, i in self.where(where_clause, default_table):
+                valid_rows_mixed.append((table,i))
+            
+            
+            for row in valid_rows_mixed:
+                valid_rows.append(row[0].rows[row[1]])
+        
+        order_columns = []
+        for column in order_columns_mixed:
+            if '.' not in column:
+                order_columns.append((default_table, column))
+            else:
+                dot_index = column.index('.')
+                table = self.tables[column[:dot_index]]
+                column_name = column[dot_index + 1:]
+                order_columns.append((table, column_name))
+                
+        return_columns = []
+        for column in return_columns_mixed:
+            if '.' not in column:
+                return_columns.append((default_table, column))
+            else:
+                dot_index = column.index('.')
+                table = self.tables[column[:dot_index]]
+                column_name = column[dot_index + 1:]
+                return_columns.append((table, column_name))
         
         if distinct:
             new_rows = []
-            order_i = self.header_index[order_columns[0]]
+            order_i = order_columns[0][0].header_index[order_columns[0][1]]
             for row in valid_rows:
                 valid = True
                 for unique_row in new_rows:
@@ -473,13 +499,7 @@ class Database(object):
         
         sort_indices = []
         for column in order_columns:
-            if '.' in column:
-                dot_index = column.index('.')
-                table_name = column[:dot_index]
-                column_name = column[dot_index + 1:]
-                sort_indices.append(self.header_index[column_name])
-            else:
-                sort_indices.append(self.header_index[column])
+            sort_indices.append(column[0].header_index[column[1]])
         
         sorted_rows = valid_rows
         sorted_rows.sort(key=operator.itemgetter(*sort_indices))
@@ -492,10 +512,10 @@ class Database(object):
             
             # Add value from each specified column to out_row
             for column in return_columns:
-                if column == '*':
+                if column[1][-1] == '*':
                     out_row += row
                 else:
-                    out_row.append(row[self.header_index[column]])
+                    out_row.append(row[column[0].header_index[column[1]]])
             
             out.append(tuple(out_row))
                     
