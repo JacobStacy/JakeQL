@@ -10,6 +10,7 @@ N/A
 """
 import string
 import operator
+from copy import deepcopy
 
 _ALL_DATABASES = {}
 
@@ -125,9 +126,7 @@ class Tokenizer():
 
         return tokens
 
-class Connection(object):
-    
-    database = None
+class Connection:
     
     
     def __init__(self, filename):
@@ -135,24 +134,53 @@ class Connection(object):
         Takes a filename, but doesn't do anything with it.
         (The filename will be used in a future project).
         """
-        # Temporary implementation
-        _ALL_DATABASES["database1"] = Database()
-        self.database = _ALL_DATABASES["database1"]
-
+        if filename in _ALL_DATABASES:
+            self.real_database = _ALL_DATABASES[filename]
+        else:
+            self.real_database = Database()
+            _ALL_DATABASES[filename] = self.real_database
+        self.database = None
+        self.working_database = None
+        
+    def __start_transaction(self):    
+        self.working_database = deepcopy(self.real_database)
+        
+    def __commit(self):
+        self.real_database = deepcopy(self.working_database)
+        self.working_database = None
+    
     def execute(self, statement):
         """
         Takes a SQL statement.
         Returns a list of tuples (empty unless select statement
         with rows to return).
         """
-        
         tokens = Tokenizer().tokenize(statement)
         
+        if self.working_database is None:
+            self.database = self.real_database
+        else:
+            self.database = self.working_database
+        
         match tokens[0]:
+            
+            case "BEGIN":
+                assert tokens[1] == "TRANSACTION"
+                self.__start_transaction()
+                return []
+            
+            
             case "CREATE":
                 assert tokens[1] == "TABLE"
                 table_name = tokens[2] 
+                
+                if tokens[2] == "IF" and tokens[3] == "NOT" and tokens[4] == "EXISTS":
+                    return []
+                
                 assert tokens[3] == "("
+                
+                if table_name in self.database.tables:
+                    raise Exception('Table already exists')
                 
                 column_headers = []
                 
@@ -163,8 +191,10 @@ class Connection(object):
                     column_headers.append((column_name, column_type))
                     
                 # Create table and add it to the database
-                new_table = Table(table_name, column_headers)
-                self.database[table_name] = new_table
+                # new_table = Table(table_name, column_headers)
+                self.database.add_table(table_name, column_headers)
+                
+                # print(self.database.tables)
                 
                 return []
             
@@ -172,7 +202,10 @@ class Connection(object):
                 assert tokens[1] == "INTO"
                 tokens = tokens[2:]
                 
-                assert tokens[0] in self.database
+                if tokens[0] not in self.database:
+                    print(tokens[0], tokens)
+                    print(self.database.tables)
+                    assert tokens[0] in self.database
                 table = self.database[tokens[0]]
                 tokens = tokens[1:]
                 
@@ -346,6 +379,27 @@ class Connection(object):
                 self.database.remove_data(tokens[3:], self.database[tokens[2]])
                 
                 return []
+            
+            case "DROP":
+                #Little bobby tables
+                assert tokens[1] == "TABLE"
+                
+                
+                
+                if tokens[2] == "IF" and tokens[3] == "EXISTS":
+                    if tokens[4] in self.database.tables:
+                        del self.database.tables[tokens[4]]
+                    
+                elif tokens[2] not in self.database.tables:
+                        raise Exception('Table does not exist')
+                
+                else:
+                    del self.database.tables[tokens[2]]      
+                    
+                return []
+                    
+                    
+        
 
     def close(self):
         """
@@ -354,18 +408,28 @@ class Connection(object):
         pass
 
 
-def connect(filename):
+def connect(database, timeout = 0, isolation_level = 0):
     """
     Creates a Connection object with the given filename
     """
     
-    return Connection(filename)
+    return Connection(database)
 
 
-class Database(object):
+class Database:
     
-    # Dictionary of tables in the database
-    tables = {}
+    # # Dictionary of tables in the database
+    # tables = {}
+    
+    ###### LOCKS ######
+    # 0 - unlocked
+    # 1 - shared lock
+    # 2 - reserved lock
+    # 3 - exclusive lock
+    
+    def __init__(self):
+        self.tables = {}
+        self.lock = 0
     
     def __getitem__(self, key):
         return self.tables[key]
@@ -375,6 +439,9 @@ class Database(object):
     
     def __setitem__(self, key, item):
         self.tables[key] = item
+        
+    def add_table(self, table_name, column_headers):
+        self.tables[table_name] = Table(table_name, column_headers)
         
         
     def where(self, where_clause, default_table):
@@ -585,18 +652,18 @@ class Database(object):
                     
     
 
-class Table(object):
-    # Name of the table 
-    name = ""
+class Table:
+    # # Name of the table 
+    # name = ""
     
-    # List of tuples storing columns_headers and type(name, type)
-    column_headers = []
+    # # List of tuples storing columns_headers and type(name, type)
+    # column_headers = []
     
-    # Dictionary holding index of columns by header name
-    header_index = {}
+    # # Dictionary holding index of columns by header name
+    # header_index = {}
     
-    # List of rows
-    rows = []
+    # # List of rows
+    # rows = []
     
     def __init__(self, name, column_headers):
         self.name = name
@@ -631,10 +698,10 @@ class Table(object):
             
     
 
-class Row(object):
+class Row:
     
-    # Inner data structure for the row
-    data = []
+    # # Inner data structure for the row
+    # data = []
 
     def __init__(self, data):
         self.data = list(data)
