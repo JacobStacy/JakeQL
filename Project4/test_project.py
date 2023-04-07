@@ -5,27 +5,73 @@ import subprocess
 
 database = "test1.db"
 sql_files = [
-                # "test.connections.01.sql",
+                "test.connections.01.sql",
                 "test.connections.02.sql",
-                # "test.create_drop_table.01.sql",
-                # "test.create_drop_table.02.sql",
-                # "test.create_drop_table.03.sql",
-                # "test.create_drop_table.04.sql",
-                # "test.create_drop_table.05.sql",
-                # "test.create_drop_table.06.sql",
+                "test.create_drop_table.01.sql",
+                "test.create_drop_table.02.sql",
+                "test.create_drop_table.03.sql",
+                "test.create_drop_table.04.sql",
+                "test.create_drop_table.05.sql",
+                "test.create_drop_table.06.sql",
                 "test.isolation.01.sql",
                 "test.isolation.02.sql",
-                # "test.regression.01.sql",
-                # "test.regression.02.sql",
-                # "test.rollback.01.sql",
-                # "test.rollback.02.sql",
-                # "test.transaction_modes.01.sql",
-                # "test.transaction_modes.02.sql",
-                # "test.transaction_modes.03.sql",
-                # "test.transaction.01.sql",
-                # "test.transaction.02.sql",
-                # "test.transaction.03.sql",
+                "test.regression.01.sql",
+                "test.regression.02.sql",
+                "test.rollback.01.sql",
+                "test.rollback.02.sql",
+                "test.rollback.03.sql",
+                "test.transaction_modes.01.sql",
+                "test.transaction_modes.02.sql",
+                "test.transaction_modes.03.sql",
+                "test.transaction_modes.04.sql",
+                "test.transactions.01.sql",
+                "test.transactions.02.sql",
+                "test.transactions.03.sql",
+                "test.transactions.04.sql",
+                "test.transactions.05.sql",
+                "test.delete.01.sql",
+                "test.delete.02.sql",
+                "test.distinct.01.sql",
+                "test.distinct.02.sql",
+                "test.ids.01.sql",
+                "test.ids.02.sql",
+                "test.ids.03.sql",
+                "test.ids.04.sql" ,
+                "test.ids.05.sql" ,
+                "test.insert-columns.01.sql",
+                "test.insert-columns.02.sql",
+                "test.insert-columns.03.sql",
+                "test.join.01.sql",
+                "test.join.02.sql",
+                "test.join.03.sql",
+                "test.multi-insert.01.sql",
+                "test.multi-insert.02.sql",
+                "test.multi-insert.03.sql",
+                "test.qualified.01.sql",
+                "test.qualified.02.sql",
+                "test.qualified.03.sql",
+                "test.regression.01.sql",
+                "test.regression.02.sql",
+                "test.update.01.sql",
+                "test.update.02.sql",
+                "test.update.03.sql",
+                "test.where.01.sql",
+                "test.where.02.sql",
+                "test.where.03.sql",
+                "test.where.04.sql",
+                "test.where.05.sql"
              ]
+
+error_tests = [
+    "test.create_drop_table.02.sql",
+    "test.create_drop_table.06.sql",
+    "test.isolation.02.sql",
+    "test.transaction_modes.02.sql",
+    "test.transaction_modes.03.sql",
+    "test.transactions.04.sql",
+    "test.transactions.05.sql",
+    "test.rollback.03.sql",
+]
 
 for sql_file in sql_files:
     print("FILE:", sql_file)
@@ -36,24 +82,31 @@ for sql_file in sql_files:
 
     py_path = "C:/Users/Jacob Stacy/AppData/Local/Programs/Python/Python310/python.exe"
     cli_path = "e:/Work/Class/CSE-480/Project4/cli.py "
+    
+    
+    proc2 = subprocess.Popen([py_path, cli_path,  f'{sql_file}', "--sqlite"], shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc2.wait()
+    expected = proc2.communicate()[0]
 
     proc = subprocess.Popen([py_path, cli_path,  f'{sql_file}'], shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     proc.wait()
     result = proc.communicate()[0]
     
     
-    proc2 = subprocess.Popen([py_path, cli_path,  f'{sql_file}', "--sqlite"], shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    proc2.wait()
-    expected = proc2.communicate()[0]
-    
-    
 
 
     
     print(str(expected) == str(result))
-    if sql_file == "test.create_drop_table.02.sql" or sql_file == "test.create_drop_table.06.sql":
+    if sql_file in error_tests:
+        print("\n\n\n\n\n ERRROR TEST:  #################")
+        print("\nexpected:")
+        print(*(expected.decode().splitlines()), sep='\n')
+        print("\n\nstudent: ")
+        print(*(result.decode().splitlines()), sep='\n')
+        print('\n')
         assert expected.decode().splitlines()[-1] == result.decode().splitlines()[-1]
         print(expected.decode().splitlines()[-1] == result.decode().splitlines()[-1])
+        print("#################\n\n\n")
         
     elif (str(expected) != str(result) ):
         print("\n\nexpected:")
@@ -65,4 +118,4 @@ for sql_file in sql_files:
     
     print("")
     
-print("TOTAL: ", (len(sql_files) / 20) * 100, "%")
+print("TOTAL: ", (len(sql_files) / (24 + 31)) * 100, "%")

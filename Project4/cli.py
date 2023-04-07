@@ -50,6 +50,7 @@ def execute(statement, connection):
         result = connection.execute(statement)
     except:
         print(traceback.print_exc(), file=sys.stderr)
+        print(statement, "<<<<<<<<<<<<<<")
         raise DatabaseException("Database raised exception")
     else:
         return get_lines_from_result(result)

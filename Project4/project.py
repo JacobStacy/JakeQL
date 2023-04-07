@@ -10,9 +10,17 @@ N/A
 """
 import string
 import operator
+
 from copy import deepcopy
+from bisect import insort
 
 _ALL_DATABASES = {}
+SHARED = 0
+RESERVED = 1
+EXCLUSIVE = 2
+
+number_of_connections = 0
+
 
 class Tokenizer():
     def collect_characters(self, query, allowed_characters):
@@ -125,6 +133,28 @@ class Tokenizer():
                 raise AssertionError("Query didn't get shorter.")
 
         return tokens
+    
+class Lock:
+    
+    def __init__(self, conn_number, level):
+        self.level = level
+        self.conn_number = conn_number
+        self.committed = False
+        
+    def __str__(self):
+        return f"Conn:{self.conn_number} Lvl:{self.level} Commit: {self.committed}"
+    
+    def __repr__(self):
+        return f"Conn:{self.conn_number} Lvl:{self.level} Commit: {self.committed}"
+        
+    def __eq__(self, b):
+        return self.level == b
+    
+    def __lt__(self, b):
+        return self.level < b
+    
+    def __gt__(self, b):
+        return self.level > b
 
 class Connection:
     
@@ -134,20 +164,47 @@ class Connection:
         Takes a filename, but doesn't do anything with it.
         (The filename will be used in a future project).
         """
-        if filename in _ALL_DATABASES:
-            self.real_database = _ALL_DATABASES[filename]
-        else:
-            self.real_database = Database()
-            _ALL_DATABASES[filename] = self.real_database
+        if filename not in _ALL_DATABASES:
+            _ALL_DATABASES[filename] = Database(filename)
+        
+        self.real_name = filename
+        _ALL_DATABASES[filename].real = _ALL_DATABASES[filename]
         self.database = None
         self.working_database = None
+        self.locks_held = []
+        self.in_transaction = False
         
+        global number_of_connections
+        self.conn_number = number_of_connections
+        number_of_connections += 1
+
+        # Transaction modes, 0 = DEFFERED, 1 = IMMEDIATE, 2 = EXCLUSIVE
+        self.transaction_mode = 0
+        
+    def add_lock(self, lock_level):
+        self.database.real.locks = _ALL_DATABASES[self.real_name].locks
+        self.locks_held.append(self.database.set_lock(self.conn_number, lock_level))            
+                
     def __start_transaction(self):    
-        self.working_database = deepcopy(self.real_database)
+        self.working_database = deepcopy(_ALL_DATABASES[self.real_name])
         
     def __commit(self):
-        self.real_database = deepcopy(self.working_database)
+        for i in range(len(self.locks_held)): 
+            self.locks_held[i].committed = True
+        
+        self.locks_held = []
+        
+        if self.working_database is not None:
+            _ALL_DATABASES[self.real_name] = deepcopy(self.working_database)
         self.working_database = None
+        self.transaction_mode = 0
+        
+    def __rollback(self):
+        self.working_database = None
+        for i in range(len(self.locks_held)): 
+            self.locks_held[i].committed = True
+        self.transaction_mode = 0
+    
     
     def execute(self, statement):
         """
@@ -157,18 +214,57 @@ class Connection:
         """
         tokens = Tokenizer().tokenize(statement)
         
-        if self.working_database is None:
-            self.database = self.real_database
-        else:
-            self.database = self.working_database
+        if self.in_transaction == False:
+            self.__start_transaction()
+        
+        # if self.working_database is None:
+        #     self.database = self.real_database
+        # else:
+        self.database = self.working_database
+            
+        out = []
         
         match tokens[0]:
-            
+        
             case "BEGIN":
-                assert tokens[1] == "TRANSACTION"
-                self.__start_transaction()
-                return []
+                        
+                if self.working_database is not None and self.in_transaction:
+                    raise Exception("Transaction not initated")
+                
+                self.in_transaction = True
+                # Pick tranaction mode, default 0
+                match tokens[1]:
+                    case "IMMEDIATE":
+                        self.transaction_mode = 1
+                        self.add_lock(RESERVED)
+                    case "EXCLUSIVE":
+                        self.transaction_mode = 2
+                        self.add_lock(EXCLUSIVE)
+                
             
+            case "COMMIT":
+                    
+                if not self.in_transaction:
+                    raise Exception("Transaction not initated")
+                
+                # Check to see if we have a reserved lock
+                for lock in self.locks_held:
+                    if lock.level >= RESERVED:
+                        self.add_lock(EXCLUSIVE)
+                        break
+                
+                self.__commit()
+                self.in_transaction = False
+                
+            case "ROLLBACK":
+                assert tokens[1]  == "TRANSACTION"
+                
+                if not self.in_transaction:
+                    raise Exception("Transaction not initated")
+                
+                self.__rollback()
+                self.in_transaction = False
+                
             
             case "CREATE":
                 assert tokens[1] == "TABLE"
@@ -196,9 +292,10 @@ class Connection:
                 
                 # print(self.database.tables)
                 
-                return []
             
             case "INSERT":
+                self.add_lock(RESERVED)
+                
                 assert tokens[1] == "INTO"
                 tokens = tokens[2:]
                 
@@ -271,10 +368,10 @@ class Connection:
                     rows.append(values)
                     
                 table.add_rows(rows, insert_columns)
-                return []
             
                     
             case "SELECT":
+                self.add_lock(SHARED)
                 
                 return_columns = []
                 distinct = False
@@ -340,9 +437,11 @@ class Connection:
                         order_columns.append(tokens[0])
                         tokens = tokens[1:]
                 
-                return self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join)
+                out = self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join)
             
             case "UPDATE":
+                self.add_lock(RESERVED)
+                
                 return_columns = []
                 
                 assert tokens[1] in self.database
@@ -369,22 +468,18 @@ class Connection:
                     values.append(tokens[2])
                     
                     tokens = tokens[3:]
-                
+        
                 self.database.set_data(column_headers,values,tokens, table)
-                
-                return []
             
             case "DELETE":
+                self.add_lock(RESERVED)
+                
                 assert tokens[1] == "FROM"
                 self.database.remove_data(tokens[3:], self.database[tokens[2]])
-                
-                return []
             
             case "DROP":
                 #Little bobby tables
                 assert tokens[1] == "TABLE"
-                
-                
                 
                 if tokens[2] == "IF" and tokens[3] == "EXISTS":
                     if tokens[4] in self.database.tables:
@@ -395,10 +490,12 @@ class Connection:
                 
                 else:
                     del self.database.tables[tokens[2]]      
-                    
-                return []
-                    
-                    
+        
+        
+        if not self.in_transaction:
+            self.__commit()
+        return out           
+    
         
 
     def close(self):
@@ -412,24 +509,21 @@ def connect(database, timeout = 0, isolation_level = 0):
     """
     Creates a Connection object with the given filename
     """
-    
     return Connection(database)
 
 
 class Database:
-    
-    # # Dictionary of tables in the database
-    # tables = {}
-    
+        
     ###### LOCKS ######
-    # 0 - unlocked
-    # 1 - shared lock
-    # 2 - reserved lock
-    # 3 - exclusive lock
+    # 0 - shared lock
+    # 1 - reserved lock
+    # 2 - exclusive lock
     
-    def __init__(self):
+    def __init__(self, name):
+        self.name = name
+        self.real = None
         self.tables = {}
-        self.lock = 0
+        self.locks = []
     
     def __getitem__(self, key):
         return self.tables[key]
@@ -440,9 +534,42 @@ class Database:
     def __setitem__(self, key, item):
         self.tables[key] = item
         
+    def set_lock(self, conn_number, lock_level):
+        lock = Lock(conn_number, lock_level)
+                
+        if len(self.real.locks) == 0 or self.check_locks(conn_number, lock_level):
+            insort(self.real.locks, lock)
+            return lock
+            
+        
+        
+    def check_locks(self, conn_number, action_level):
+        
+        while self.real.locks[-1].committed:
+            self.real.locks.pop()
+            
+            if len(self.real.locks) == 0:
+                return True
+        
+        highest = None
+        i = -1
+        while len(self.real.locks) + i >= 0:
+            if self.real.locks[i].conn_number != conn_number and not self.real.locks[i].committed:
+                highest = self.real.locks[i]
+                break
+            i -= 1
+        
+        if highest is None:
+            return True
+        
+        if (action_level == SHARED or highest < RESERVED) and action_level < EXCLUSIVE:
+            return True
+        
+        raise Exception("Action cannot be preformed due to locking")
+        
+        
     def add_table(self, table_name, column_headers):
         self.tables[table_name] = Table(table_name, column_headers)
-        
         
     def where(self, where_clause, default_table):
         assert where_clause[0] == "WHERE"
@@ -717,3 +844,4 @@ class Row:
     
     def __repr__(self):
         return repr(self.data)
+
