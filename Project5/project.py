@@ -110,7 +110,7 @@ class Tokenizer():
                 continue
 
             # Handle misc char
-            if query[0] in "(),;*!=><":
+            if query[0] in "(),;*!=><?":
                 if query[0] == '!' and query[1] == "=":
                     tokens.append(query[0:2])
                     query = query[2:]
@@ -204,15 +204,29 @@ class Connection:
         for i in range(len(self.locks_held)): 
             self.locks_held[i].committed = True
         self.transaction_mode = 0
+        
     
     
-    def execute(self, statement):
+    def executemany(self, statement, values):
+        for value_set in values:
+            self.execute(statement, value_set)
+            
+                
+            
+    
+    def execute(self, statement, parameters=[], tokens=[]):
         """
         Takes a SQL statement.
         Returns a list of tuples (empty unless select statement
         with rows to return).
         """
-        tokens = Tokenizer().tokenize(statement)
+        if len(tokens) == 0:
+            tokens = Tokenizer().tokenize(statement)
+            params = parameters
+            for i in range(len(tokens)):
+                if tokens[i] == '?':
+                    tokens[i] = params[0]
+                    params = params[1:]
         
         if self.in_transaction == False:
             self.__start_transaction()
@@ -267,30 +281,64 @@ class Connection:
                 
             
             case "CREATE":
-                assert tokens[1] == "TABLE"
-                table_name = tokens[2] 
                 
-                if tokens[2] == "IF" and tokens[3] == "NOT" and tokens[4] == "EXISTS":
-                    return []
+                if tokens[1] == "VIEW":
+                    self.database.views[tokens[2]] = tokens
+                else:
                 
-                assert tokens[3] == "("
                 
-                if table_name in self.database.tables:
-                    raise Exception('Table already exists')
-                
-                column_headers = []
-                
-                # Loop through tokens by column name and type (i+=2) not including the closing ) and ;
-                for i in range(4, 4 + len(tokens[4:-2]), 3):
-                    column_name = tokens[i]
-                    column_type = tokens[i+1]
-                    column_headers.append((column_name, column_type))
+                    assert tokens[1] == "TABLE"
+                    table_name = tokens[2] 
                     
-                # Create table and add it to the database
-                # new_table = Table(table_name, column_headers)
-                self.database.add_table(table_name, column_headers)
-                
-                # print(self.database.tables)
+                    if tokens[2] == "IF" and tokens[3] == "NOT" and tokens[4] == "EXISTS":
+                        return []
+                    
+                    assert tokens[3] == "("
+                    tokens = tokens[4:]
+                    
+                    if table_name in self.database.tables:
+                        raise Exception('Table already exists')
+                    
+                    column_headers = []
+                    
+                    # Loop through tokens by column name and type (i+=2) not including the closing ) and ;
+                    while 1:
+                        
+                        if tokens[0] == ',':
+                            tokens = tokens[1:]
+                            continue
+                        
+                        if tokens[0] == ')':
+                            tokens = tokens[1:]
+                            break
+                        
+                        column_name = tokens[0]
+                        column_type = tokens[1]
+                        tokens = tokens[2:]
+                        
+                        default = None
+                        if tokens[0] == "DEFAULT":
+                            tokens = tokens[1:]
+                            
+                            match column_type:
+                                case "REAL":
+                                    if tokens[0] is not None:
+                                        tokens[0] = float(tokens[0])
+                                case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
+                                    if tokens[0] is not None and int(tokens[0]) == tokens[0]:
+                                        tokens[0] = int(tokens[0])
+                                        
+                            default = tokens[0]
+                            tokens = tokens[1:]
+                        
+                        column_headers.append((column_name, column_type, default))
+                        
+                        
+                    # Create table and add it to the database
+                    # new_table = Table(table_name, column_headers)
+                    self.database.add_table(table_name, column_headers)
+                    
+                    # print(self.database.tables)
                 
             
             case "INSERT":
@@ -308,11 +356,18 @@ class Connection:
                 
                 
                 insert_columns = []
+                default = False
+                
                 if tokens[0] != "VALUES":
                     while 1:
                         if tokens[0] == '(' or tokens[0] == ',':
                             tokens = tokens[1:]
                             continue
+                        
+                        if tokens[0] == "DEFAULT":
+                            default = True
+                            tokens = tokens[1:]
+                            break
                         
                         if tokens[0] == ')':
                             tokens = tokens[1:]
@@ -324,48 +379,51 @@ class Connection:
                 assert tokens[0] == "VALUES"
                 tokens = tokens[1:]
                 
-                rows = []                
-                # Get all values for each row
-                while 1:
-                    values = []
-                    
-                    if tokens[0] == ',':
-                        tokens = tokens[1:]
-                        continue
-                    
-                    if tokens[0] == ';':
-                        break
-                    
-                    value_i = 0
+                if default:
+                    rows = [[i[-1] for i in table.column_headers]]
+                else:
+                    rows = []                
+                    # Get all values for each row
                     while 1:
+                        values = []
                         
-                        if tokens[0] == '(' or tokens[0] == ',':
+                        if tokens[0] == ',':
                             tokens = tokens[1:]
                             continue
                         
-                        if tokens[0] == ')':
-                            tokens = tokens[1:]
+                        if tokens[0] == ';':
                             break
                         
-                        if len(insert_columns) == 0:
-                            col_type = table.column_headers[value_i][1]
-                        else:
-                            col_type = table.column_headers[table.header_index[insert_columns[value_i]]][1]
+                        value_i = 0
+                        while 1:
                             
-                        # Handle 3 being 3.0 and vise versa
-                        match col_type:
-                            case "REAL":
-                                if tokens[0] is not None:
-                                    tokens[0] = float(tokens[0])
-                            case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
-                                if tokens[0] is not None and int(tokens[0]) == tokens[0]:
-                                    tokens[0] = int(tokens[0])
+                            if tokens[0] == '(' or tokens[0] == ',':
+                                tokens = tokens[1:]
+                                continue
+                            
+                            if tokens[0] == ')':
+                                tokens = tokens[1:]
+                                break
+                            
+                            if len(insert_columns) == 0:
+                                col_type = table.column_headers[value_i][1]
+                            else:
+                                col_type = table.column_headers[table.header_index[insert_columns[value_i]]][1]
+                                
+                            # Handle 3 being 3.0 and vise versa
+                            match col_type:
+                                case "REAL":
+                                    if tokens[0] is not None:
+                                        tokens[0] = float(tokens[0])
+                                case "INTEGER": # The way the real one (who cannot be named) handles this really weirdly
+                                    if tokens[0] is not None and int(tokens[0]) == tokens[0]:
+                                        tokens[0] = int(tokens[0])
+                            
+                            values.append(tokens[0])
+                            tokens = tokens[1:]
+                            value_i +=1
                         
-                        values.append(tokens[0])
-                        tokens = tokens[1:]
-                        value_i +=1
-                    
-                    rows.append(values)
+                        rows.append(values)
                     
                 table.add_rows(rows, insert_columns)
             
@@ -373,78 +431,7 @@ class Connection:
             case "SELECT":
                 self.add_lock(SHARED)
                 
-                return_columns = []
-                distinct = False
-                aggregate = ""
-                
-                table_name = None
-                # Get name of columns that will be returned
-                while 1:
-                    # Skip ','
-                    if tokens[0] == ',' or tokens[0] == "SELECT": 
-                        tokens = tokens[1:]
-                        continue
-                    
-                    if tokens[0] == "MAX" or tokens[0] == "MIN":
-                        aggregate = tokens[0]
-                        return_columns.append(tokens[2])
-                        tokens = tokens[4:]
-                        continue
-                    
-                    # Catch DISTINCT
-                    if tokens[0] == "DISTINCT":
-                        distinct = True
-                        tokens = tokens[1:]
-                        continue
-                    
-                    # Stop at FROM
-                    if tokens[0] == "FROM": 
-                        table_name = tokens[1]
-                        tokens = tokens[2:]
-                        break
-                    
-                    return_columns.append(tokens[0])
-                    tokens = tokens[1:]
-                
-                assert table_name in self.database
-                table = self.database[table_name]
-                
-                left_outer_join = []
-                # Catch LEFT OUTER JOIN
-                if tokens[0] == "LEFT":
-                    assert tokens[1] == "OUTER"
-                    assert tokens[2] == "JOIN"
-                    tokens = tokens[3:]
-                    
-                    right_table = tokens[0]
-                    assert tokens[1] == "ON"
-                    left_column = tokens[2]
-                    right_column = tokens[4]
-                    tokens = tokens[5:]
-                    left_outer_join = [table_name, right_table, left_column, right_column]
-                                    
-                # Get WHERE clause
-                where_clause = []
-                while 1:
-                    if tokens[0] == "ORDER" or tokens[0] == ';':
-                        break
-                    
-                    where_clause.append(tokens[0])
-                    tokens = tokens[1:]
-                        
-                # Get ORDER BY columns
-                order_columns = []
-                while 1:
-                        if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] == ',' :
-                            tokens = tokens[1:]
-                            continue
-                        if tokens[0] == ';':
-                            break
-                        
-                        order_columns.append(tokens[0])
-                        tokens = tokens[1:]
-                
-                out = self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join, aggregate)
+                out = self.database.get_data(*self.database.select_decoder(tokens))[0]
             
             case "UPDATE":
                 self.add_lock(RESERVED)
@@ -530,6 +517,7 @@ class Database:
         self.name = name
         self.real = None
         self.tables = {}
+        self.views = {}
         self.locks = []
     
     def __getitem__(self, key):
@@ -541,14 +529,147 @@ class Database:
     def __setitem__(self, key, item):
         self.tables[key] = item
         
+    def create_view(self, tokens):
+        view_name = tokens[2]
+                    
+        tokens = tokens[4:]
+        assert tokens[0] == "SELECT"
+        
+        decoded = self.select_decoder(tokens)
+        
+        return_columns_mixed = decoded[0]
+        order_columns = decoded[1]
+        where_clause = decoded[2]
+        distinct = decoded[3]
+        default_table = decoded[4] 
+        left_outer_join = decoded[5]
+        aggregate = decoded[6]
+        decending = decoded[7]
+        
+        
+        data = self.get_data(*decoded)
+        
+        if len(data) > 1:
+            self.database[view_name] = deepcopy(data[1])
+            return []
+        
+        
+        # Account for qualifier in return_columns  
+        return_columns = self.qualify_columns(default_table, return_columns_mixed)
+        
+        column_headers = []  
+        for table, column in return_columns:
+            column_headers.append(table.column_headers[table.header_index[column]])
+        
+        self.add_table(view_name, column_headers)
+        
+        self.tables[view_name].add_rows(data[0])
+        return []
+        
+    def select_decoder(self, tokens):
+        return_columns = []
+        distinct = False
+        aggregate = ""
+        
+        table_name = None
+        # Get name of columns that will be returned
+        while 1:
+            # Skip ','
+            if tokens[0] == ',' or tokens[0] == "SELECT": 
+                tokens = tokens[1:]
+                continue
+            
+            if tokens[0] == "MAX" or tokens[0] == "MIN":
+                aggregate = tokens[0]
+                return_columns.append(tokens[2])
+                tokens = tokens[4:]
+                continue
+            
+            # Catch DISTINCT
+            if tokens[0] == "DISTINCT":
+                distinct = True
+                tokens = tokens[1:]
+                continue
+            
+            # Stop at FROM
+            if tokens[0] == "FROM": 
+                table_name = tokens[1]
+                tokens = tokens[2:]
+                break
+            
+            return_columns.append(tokens[0])
+            tokens = tokens[1:]
+            
+        if table_name in self.views:
+            self.create_view(self.views[table_name])
+        
+        assert table_name in self.tables
+        table = self.tables[table_name]
+        
+        left_outer_join = []
+        # Catch LEFT OUTER JOIN
+        if tokens[0] == "LEFT":
+            assert tokens[1] == "OUTER"
+            assert tokens[2] == "JOIN"
+            tokens = tokens[3:]
+            
+            right_table = tokens[0]
+            assert tokens[1] == "ON"
+            left_column = tokens[2]
+            right_column = tokens[4]
+            tokens = tokens[5:]
+            left_outer_join = [table_name, right_table, left_column, right_column]
+                            
+        # Get WHERE clause
+        where_clause = []
+        while 1:
+            if tokens[0] == "ORDER" or tokens[0] == ';':
+                break
+            
+            where_clause.append(tokens[0])
+            tokens = tokens[1:]
+                
+        # Get ORDER BY columns
+        decending = False
+        order_columns = []
+        while 1:
+            if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] == ',' :
+                tokens = tokens[1:]
+                continue
+            if tokens[0] == ';':
+                break
+            
+            column = tokens[0]
+            tokens = tokens[1:]
+            
+            if tokens[0] == "DESC":
+                tokens = tokens[1:]
+                if not decending:
+                    decending = True
+                    
+            order_columns.append(column)
+                
+        return [return_columns, order_columns, where_clause, distinct, table, left_outer_join, aggregate, decending]
+    
+    def qualify_columns(self, default_table, columns):
+        # Account for qualifier in return_columns  
+        return_columns = []
+        for column in columns:
+            if '.' not in column:
+                return_columns.append((default_table, column))
+            else:
+                dot_index = column.index('.')
+                table = self.tables[column[:dot_index]]
+                column_name = column[dot_index + 1:]
+                return_columns.append((table, column_name))
+        return return_columns
+        
     def set_lock(self, conn_number, lock_level):
         lock = Lock(conn_number, lock_level)
                 
         if len(self.real.locks) == 0 or self.check_locks(conn_number, lock_level):
             insort(self.real.locks, lock)
             return lock
-            
-        
         
     def check_locks(self, conn_number, action_level):
         
@@ -635,9 +756,9 @@ class Database:
         right_column_i = right_table.header_index[join_data[3][join_data[3].index('.') + 1:]]
         
         # Get headers from both tables
-        headers = [("".join([left_table.name, '.', header[0]]), header[1]) for header in left_table.column_headers]
+        headers = [("".join([left_table.name, '.', header[0]]), header[1], header[2]) for header in left_table.column_headers]
         left_headers = [header[0] for header in headers] # Save for later
-        headers.extend([("".join([right_table.name, '.', header[0]]), header[1]) for header in right_table.column_headers])
+        headers.extend([("".join([right_table.name, '.', header[0]]), header[1], header[2]) for header in right_table.column_headers])
         
         # Create fake table to use for joined data
         temp_table = Table("temp", headers)
@@ -683,32 +804,16 @@ class Database:
                     
                     
     # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table, left_outer_join_data=[], aggregate=""):
-    
+    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table, left_outer_join_data=[], aggregate="", decending = False):
+        
         # Account for qualifier in ordered_columns
-        order_columns = []
-        for column in order_columns_mixed:
-            if '.' not in column:
-                order_columns.append((default_table, column))
-            else:
-                dot_index = column.index('.')
-                table = self.tables[column[:dot_index]]
-                column_name = column[dot_index + 1:]
-                order_columns.append((table, column_name))
+        order_columns = self.qualify_columns(default_table, order_columns_mixed)
         
         # Account for qualifier in return_columns  
-        return_columns = []
-        for column in return_columns_mixed:
-            if '.' not in column:
-                return_columns.append((default_table, column))
-            else:
-                dot_index = column.index('.')
-                table = self.tables[column[:dot_index]]
-                column_name = column[dot_index + 1:]
-                return_columns.append((table, column_name))
+        return_columns = self.qualify_columns(default_table, return_columns_mixed)
                 
         if len(aggregate) > 0:
-            return [return_columns[0][0].aggregate(aggregate, return_columns[0][1])]
+            return [[return_columns[0][0].aggregate(aggregate, return_columns[0][1])]]
             
         
         # Handle Join
@@ -720,12 +825,12 @@ class Database:
             for column in order_columns:
                 sort_indices.append(join_table.header_index['.'.join([column[0].name, column[1]])])
             
-            for row in sorted(join_table.rows, key=operator.itemgetter(*sort_indices)):
+            for row in sorted(join_table.rows, key=operator.itemgetter(*sort_indices), reverse=decending):
                 out_row = []
                 for table, column_name in return_columns:
                     out_row.append(row[join_table.header_index['.'.join([table.name, column_name])]])
                 out.append(tuple(out_row))
-            return out
+            return [out, join_table]
             
         
         # Handle WHERE
@@ -761,7 +866,8 @@ class Database:
             sort_indices.append(column[0].header_index[column[1]])
         
         sorted_rows = valid_rows
-        sorted_rows.sort(key=operator.itemgetter(*sort_indices))
+        if len(sort_indices) > 0:
+            sorted_rows.sort(key=operator.itemgetter(*sort_indices), reverse=decending)
         
         # Getting specified rows
         out = []
@@ -776,8 +882,9 @@ class Database:
                     out_row.append(row[column[0].header_index[column[1]]])
             
             out.append(tuple(out_row))
+            
                     
-        return out
+        return [out]
     
     # Remove rows
     def remove_data(self, where_clause, default_table):
@@ -821,7 +928,11 @@ class Table:
         if len(insert_columns) == 0:
             self.rows.append(Row(data))
         else:
-            row_data = [None] * len(self.column_headers)
+            row_data = []
+            
+            for column in self.column_headers:
+                row_data.append(column[-1])
+            
             for i in range(len(insert_columns)):
                 row_data[self.header_index[insert_columns[i]]] = data[i]
                 
@@ -872,14 +983,14 @@ class Row:
 
 # conn = Connection("test")
 
-# conn.execute("CREATE TABLE student (name TEXT, grade REAL, piazza INTEGER);")
-# conn.execute("INSERT INTO student VALUES ('James', 3.5, 1), ('Yaxin', 3.51, 3), ('Li', 3.0, 2);")
-# print(conn.execute("SELECT piazza FROM student ORDER BY piazza;"))
+# conn.execute("CREATE TABLE students (name TEXT, grade REAL);")
+# conn.execute("INSERT INTO students VALUES ('James', 2.4), ('Yaxin', 3.5), ('Li', 3.7), ('Robert', 4.0);")
+# print(conn.execute("SELECT name FROM students WHERE grade > 3.0 ORDER BY name;"))
+# conn.execute("CREATE VIEW stu_view AS SELECT name FROM students WHERE grade > 3.0 ORDER BY name;")
+# print(conn.execute("SELECT name FROM stu_view;"))
+# print(conn.execute("SELECT * FROM stu_view;"))
 
 
-conn = Connection("test")
+# print(conn.execute("SELECT * FROM students ORDER BY class, name;"))
+# print(conn.execute("SELECT * FROM students ORDER BY class DESC, name;"))
 
-conn.execute("CREATE TABLE students (name TEXT, grade REAL DEFAULT 0.0);")
-conn.execute("INSERT INTO students (name, grade) VALUES ('James', 3.2);")
-conn.execute("INSERT INTO students (name) VALUES ('Yaxin');")
-print(*conn.execute("SELECT * FROM students ORDER BY name;")) 

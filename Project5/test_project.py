@@ -130,4 +130,4 @@ for sql_file in sql_files:
     
     print("")
     
-print("TOTAL: ", (len(sql_files) / (24 + 31 + 11)) * 100, "%")
+print("TOTAL: ", (len(sql_files) / (24 + 31 + 12)) * 100, "%")
