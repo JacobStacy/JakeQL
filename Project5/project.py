@@ -3,7 +3,7 @@ Name: Jacob Stacy
 Netid: stacyjac
 PID: A61142971
 How long did this project take you?
-7-8 hours
+4-5 hours
 
 Sources:
 N/A
@@ -205,15 +205,10 @@ class Connection:
             self.locks_held[i].committed = True
         self.transaction_mode = 0
         
-    
-    
     def executemany(self, statement, values):
         for value_set in values:
             self.execute(statement, value_set)
             
-                
-            
-    
     def execute(self, statement, parameters=[], tokens=[]):
         """
         Takes a SQL statement.
@@ -431,7 +426,7 @@ class Connection:
             case "SELECT":
                 self.add_lock(SHARED)
                 
-                out = self.database.get_data(*self.database.select_decoder(tokens))[0]
+                out = self.database.get_data(*self.database.select_decoder(tokens))
             
             case "UPDATE":
                 self.add_lock(RESERVED)
@@ -549,21 +544,20 @@ class Database:
         
         data = self.get_data(*decoded)
         
-        if len(data) > 1:
-            self.database[view_name] = deepcopy(data[1])
-            return []
-        
-        
         # Account for qualifier in return_columns  
         return_columns = self.qualify_columns(default_table, return_columns_mixed)
         
-        column_headers = []  
+        
+        column_headers = []
         for table, column in return_columns:
-            column_headers.append(table.column_headers[table.header_index[column]])
+            if column == '*':
+                [column_headers.append(i) for i in table.column_headers]
+            else:
+                column_headers.append(table.column_headers[table.header_index[column]])
         
         self.add_table(view_name, column_headers)
         
-        self.tables[view_name].add_rows(data[0])
+        self.tables[view_name].add_rows(data)
         return []
         
     def select_decoder(self, tokens):
@@ -813,7 +807,7 @@ class Database:
         return_columns = self.qualify_columns(default_table, return_columns_mixed)
                 
         if len(aggregate) > 0:
-            return [[return_columns[0][0].aggregate(aggregate, return_columns[0][1])]]
+            return [return_columns[0][0].aggregate(aggregate, return_columns[0][1])]
             
         
         # Handle Join
@@ -830,7 +824,7 @@ class Database:
                 for table, column_name in return_columns:
                     out_row.append(row[join_table.header_index['.'.join([table.name, column_name])]])
                 out.append(tuple(out_row))
-            return [out, join_table]
+            return out
             
         
         # Handle WHERE
@@ -884,7 +878,7 @@ class Database:
             out.append(tuple(out_row))
             
                     
-        return [out]
+        return out
     
     # Remove rows
     def remove_data(self, where_clause, default_table):
@@ -980,13 +974,12 @@ class Row:
 
 
 
-
 # conn = Connection("test")
 
 # conn.execute("CREATE TABLE students (name TEXT, grade REAL);")
 # conn.execute("INSERT INTO students VALUES ('James', 2.4), ('Yaxin', 3.5), ('Li', 3.7), ('Robert', 4.0);")
-# print(conn.execute("SELECT name FROM students WHERE grade > 3.0 ORDER BY name;"))
-# conn.execute("CREATE VIEW stu_view AS SELECT name FROM students WHERE grade > 3.0 ORDER BY name;")
+# print(conn.execute("SELECT * FROM students WHERE grade > 3.0 ORDER BY name;"))
+# conn.execute("CREATE VIEW stu_view AS SELECT * FROM students WHERE grade > 3.0 ORDER BY name;")
 # print(conn.execute("SELECT name FROM stu_view;"))
 # print(conn.execute("SELECT * FROM stu_view;"))
 
