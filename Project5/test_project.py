@@ -74,6 +74,9 @@ sql_files = [
                 "test.view.03.sql",
                 "test.view.04.sql",
                 "test.view.05.sql",
+                "test.view.06.sql",
+                "test.view.07.sql",
+                "test.view.08.sql",
              ]
 
 error_tests = [
@@ -105,11 +108,7 @@ for sql_file in sql_files:
     proc = subprocess.Popen([py_path, cli_path,  f'{sql_file}'], shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     proc.wait()
     result = proc.communicate()[0]
-    
-    
-
-
-    
+      
     print(str(expected) == str(result))
     if sql_file in error_tests:
         print("\n\n\n\n\n ERRROR TEST:  #################")
@@ -132,4 +131,4 @@ for sql_file in sql_files:
     
     print("")
     
-print("TOTAL: ", (len(sql_files) / (24 + 31 + 14)) * 100, "%")
+print("TOTAL: ", (len(sql_files) / (24 + 31 + 15)) * 100, "%")

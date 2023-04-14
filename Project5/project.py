@@ -586,9 +586,13 @@ class Database:
                 continue
             
             # Stop at FROM
-            if tokens[0] == "FROM": 
-                table_name = tokens[1]
-                tokens = tokens[2:]
+            if tokens[0] == "FROM":
+                if tokens[1] == '(':
+                    table_name = tokens[2]
+                    tokens = tokens[3:]
+                else:
+                    table_name = tokens[1]
+                    tokens = tokens[2:]
                 break
             
             return_columns.append(tokens[0])
@@ -627,7 +631,7 @@ class Database:
         decending = False
         order_columns = []
         while 1:
-            if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] == ',' :
+            if tokens[0] == "ORDER" or tokens[0] == "BY"  or tokens[0] in ',()':
                 tokens = tokens[1:]
                 continue
             if tokens[0] == ';':
