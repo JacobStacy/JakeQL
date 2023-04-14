@@ -375,6 +375,7 @@ class Connection:
                 
                 return_columns = []
                 distinct = False
+                aggregate = ""
                 
                 table_name = None
                 # Get name of columns that will be returned
@@ -382,6 +383,12 @@ class Connection:
                     # Skip ','
                     if tokens[0] == ',' or tokens[0] == "SELECT": 
                         tokens = tokens[1:]
+                        continue
+                    
+                    if tokens[0] == "MAX" or tokens[0] == "MIN":
+                        aggregate = tokens[0]
+                        return_columns.append(tokens[2])
+                        tokens = tokens[4:]
                         continue
                     
                     # Catch DISTINCT
@@ -437,7 +444,7 @@ class Connection:
                         order_columns.append(tokens[0])
                         tokens = tokens[1:]
                 
-                out = self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join)
+                out = self.database.get_data(return_columns, order_columns,where_clause, distinct, table, left_outer_join, aggregate)
             
             case "UPDATE":
                 self.add_lock(RESERVED)
@@ -676,7 +683,7 @@ class Database:
                     
                     
     # Gets specified columns ordered by a specified column
-    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table, left_outer_join_data=[]):
+    def get_data(self, return_columns_mixed, order_columns_mixed, where_clause, distinct, default_table, left_outer_join_data=[], aggregate=""):
     
         # Account for qualifier in ordered_columns
         order_columns = []
@@ -688,7 +695,7 @@ class Database:
                 table = self.tables[column[:dot_index]]
                 column_name = column[dot_index + 1:]
                 order_columns.append((table, column_name))
-              
+        
         # Account for qualifier in return_columns  
         return_columns = []
         for column in return_columns_mixed:
@@ -699,6 +706,10 @@ class Database:
                 table = self.tables[column[:dot_index]]
                 column_name = column[dot_index + 1:]
                 return_columns.append((table, column_name))
+                
+        if len(aggregate) > 0:
+            return [return_columns[0][0].aggregate(aggregate, return_columns[0][1])]
+            
         
         # Handle Join
         if len(left_outer_join_data) > 0:
@@ -823,6 +834,17 @@ class Table:
         for data in data_entries:
             self.add_row(data, insert_columns)
             
+    def aggregate(self, agg, column):
+        
+        match agg:
+            case "MAX":
+                return tuple([sorted(self.rows, key=operator.itemgetter(self.header_index[column]))[-1][self.header_index[column]]])
+            case "MIN":
+                return tuple([sorted(self.rows, key=operator.itemgetter(self.header_index[column]))[0][self.header_index[column]]])
+            
+            
+            
+            
     
 
 class Row:
@@ -845,3 +867,19 @@ class Row:
     def __repr__(self):
         return repr(self.data)
 
+
+
+
+# conn = Connection("test")
+
+# conn.execute("CREATE TABLE student (name TEXT, grade REAL, piazza INTEGER);")
+# conn.execute("INSERT INTO student VALUES ('James', 3.5, 1), ('Yaxin', 3.51, 3), ('Li', 3.0, 2);")
+# print(conn.execute("SELECT piazza FROM student ORDER BY piazza;"))
+
+
+conn = Connection("test")
+
+conn.execute("CREATE TABLE students (name TEXT, grade REAL DEFAULT 0.0);")
+conn.execute("INSERT INTO students (name, grade) VALUES ('James', 3.2);")
+conn.execute("INSERT INTO students (name) VALUES ('Yaxin');")
+print(*conn.execute("SELECT * FROM students ORDER BY name;")) 

@@ -59,7 +59,19 @@ sql_files = [
                 "test.where.02.sql",
                 "test.where.03.sql",
                 "test.where.04.sql",
-                "test.where.05.sql"
+                "test.where.05.sql",
+                "test.aggregate.01.sql",
+                "test.aggregate.02.sql",
+                "test.aggregate.03.sql",
+                "test.default.01.sql",
+                "test.default.02.sql",
+                "test.desc.01.sql",
+                "test.desc.02.sql",
+                "test.parameters.01.sql",
+                "test.parameters.02.sql",
+                "test.view.01.sql",
+                "test.view.02.sql",
+                "test.view.03.sql"
              ]
 
 error_tests = [
@@ -81,7 +93,7 @@ for sql_file in sql_files:
         pass
 
     py_path = "C:/Users/Jacob Stacy/AppData/Local/Programs/Python/Python310/python.exe"
-    cli_path = "e:/Work/Class/CSE-480/Project4/cli.py "
+    cli_path = "e:/Work/Class/CSE-480/Project5/cli.py "
     
     
     proc2 = subprocess.Popen([py_path, cli_path,  f'{sql_file}', "--sqlite"], shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -118,4 +130,4 @@ for sql_file in sql_files:
     
     print("")
     
-print("TOTAL: ", (len(sql_files) / (24 + 31)) * 100, "%")
+print("TOTAL: ", (len(sql_files) / (24 + 31 + 11)) * 100, "%")
