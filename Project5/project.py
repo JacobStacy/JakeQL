@@ -975,19 +975,3 @@ class Row:
     
     def __repr__(self):
         return repr(self.data)
-
-
-
-# conn = Connection("test")
-
-# conn.execute("CREATE TABLE students (name TEXT, grade REAL);")
-# conn.execute("INSERT INTO students VALUES ('James', 2.4), ('Yaxin', 3.5), ('Li', 3.7), ('Robert', 4.0);")
-# print(conn.execute("SELECT * FROM students WHERE grade > 3.0 ORDER BY name;"))
-# conn.execute("CREATE VIEW stu_view AS SELECT * FROM students WHERE grade > 3.0 ORDER BY name;")
-# print(conn.execute("SELECT name FROM stu_view;"))
-# print(conn.execute("SELECT * FROM stu_view;"))
-
-
-# print(conn.execute("SELECT * FROM students ORDER BY class, name;"))
-# print(conn.execute("SELECT * FROM students ORDER BY class DESC, name;"))
-
