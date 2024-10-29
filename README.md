@@ -1,71 +1,93 @@
-# JakeQL
+# JakeQL 🐍📊
+> A Python DBMS mimicking SQLite, designed for high-performance data handling and advanced SQL support.
 
-A Python DBMS that mimics SQLite, designed to handle multiple tables and databases seamlessly. JakeQL features robust conflict resolution with parallel transactions, supports complex joins, conditional queries, and provides full support for transaction modes, including isolation levels. It also implements rollback capabilities, aggregate functions, and the management of default values.
+![Python](https://img.shields.io/badge/Python-3.x-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## Table of Contents
-- [Requirements](#requirements)
-- [Usage](#usage)
-- [File Structure](#file-structure)
-- [project.py](#projectpy) 
 
-## Requirements
+JakeQL is a powerful, lightweight Database Management System (DBMS) built in that mimics SQLite, designed to handle multiple tables and databases seamlessly. JakeQL features robust conflict resolution with parallel transactions, supports complex joins, conditional queries, and provides full support for transaction modes, including isolation levels. It also implements rollback capabilities, aggregate functions, and the management of default values.
 
-- Python 3.x
-- SQLite3
+---
 
-## Usage
+## Features ✨
 
-1. To run the tests, execute the `test_project.py` script. This will automatically run a series of SQL test scripts defined in the `sql_files` list.
+- **Multi-Table & Multi-Database Management**  
+  Seamlessly handles multiple tables and databases within a single environment.
 
-   ```bash
-   python test_project.py
-   ```
+- **Parallel Transactions & Conflict Resolution**  
+  Supports concurrent transactions with robust conflict resolution, ensuring data consistency.
 
-   The output will show the results of each SQL test, including any errors encountered during execution.
+- **Advanced SQL Support**  
+  Includes complex joins, conditional queries, and aggregate functions.
 
-2. The `cli.py` script is used internally to execute the SQL commands. You can run it directly with a specific SQL file:
+- **Transaction Modes & Isolation Levels**  
+  Supports various transaction isolation levels, enabling you to control visibility and lock behavior.
 
-   ```bash
-   python cli.py <sql_file> [--sqlite]
-   ```
+- **Rollback Capabilities**  
+  Allows safe rollbacks to maintain data integrity in case of errors.
 
-   - `<sql_file>`: The path to the SQL file you want to execute.
-   - `--sqlite`: If this flag is provided, the script will use SQLite instead of the custom implementation.
+- **Default Values & Conditional Queries**  
+  Set default values and handle conditional expressions with ease.
 
-## File Structure
+---
 
-- `test_project.py`: The main testing script that iterates through SQL test files and verifies their output.
-- `cli.py`: The command-line interface for executing SQL statements from a file and displaying the results.
-- `project.py`: The core module that contains the database interaction logic.
-- `test1.db`: The SQLite database file used for testing. This file will be created and removed automatically during tests.
+## Getting Started 🚀
 
-### SQL Files
+### Prerequisites
+JakeQL is built on Python’s standard library—no external dependencies are required. Just make sure you’re using **Python 3.x**.
 
-The following SQL test files are included in the `sql_files` list for testing:
+### Installation
+Clone the repository to get started:
 
-- Connections
-- Create/Drop Table
-- Isolation
-- Regression
-- Rollback
-- Transaction Modes
-- Transactions
-- Delete
-- Distinct
-- IDs
-- Insert Columns
-- Joins
-- Multi Insert
-- Qualified
-- Update
-- Where
-- Aggregate
-- Default
-- View
+```bash
+git clone https://github.com/yourusername/JakeQL.git
+cd JakeQL
+```
 
-**Error Tests**: Some SQL files are specifically designed to trigger errors during execution. These are defined in the `error_tests` list.
+### Usage
+JakeQL includes several scripts for testing and running SQL commands.
 
-## project.py
+```python
+# To run the main script:
+python test_project.py
+```
 
-The `project.py` file defines the necessary functions and classes for interacting with the SQLite database. It handles establishing connections, executing SQL commands, and managing the lifecycle of database transactions. The functions within this module are utilized by both `test_project.py` and `cli.py` to facilitate testing and command execution.
+---
 
+## Project Structure 📂
+
+```plaintext
+JakeQL/
+├── test_project.py       # Main testing and execution script for JakeQL
+├── cli.py                # Command-line interface for running SQL files
+├── project.py            # Core JakeQL implementation
+└── sql_files/            # Directory of SQL files used for testing
+```
+
+---
+
+## Example Usage 💻
+
+The following code demonstrates how to execute SQL statements through the CLI to test JakeQL’s capabilities.
+
+```bash
+python cli.py test_sql_file.sql --sqlite
+```
+
+You can also omit `--sqlite` to run statements directly through JakeQL’s custom DBMS.
+
+
+
+## License 📄
+
+JakeQL is licensed under the MIT License. See `LICENSE` for details.
+
+---
+
+## Acknowledgements 🌟
+
+Special thanks to the Python and SQLite communities for their extensive documentation and tools, which helped shape this project.
+
+---
+
+Enjoy using **JakeQL**! 🎉
