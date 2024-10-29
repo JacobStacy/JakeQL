@@ -68,7 +68,7 @@ def execute(statement, connection, parameters=None):
 
 def main():
     parser = argparse.ArgumentParser(description="""
-    This cript imports project.py and passes sql
+    This script imports project.py and passes sql
     statements from a given file to it.
     If you pass the --sqlite argument,
     it will instead show you sqlite's output.
