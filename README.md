@@ -40,7 +40,7 @@ JakeQL is built on Python’s standard library—no external dependencies are re
 Clone the repository to get started:
 
 ```bash
-git clone https://github.com/yourusername/JakeQL.git
+git clone https://github.com/JacobStacy/JakeQL
 cd JakeQL
 ```
 
