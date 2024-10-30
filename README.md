@@ -73,16 +73,6 @@ JakeQL/
 
 ---
 
-## Example Usage 💻
-
-The following code demonstrates how to execute SQL statements through the CLI to test JakeQL’s capabilities.
-
-```bash
-python cli.py test_sql_file.sql --sqlite
-```
-
-You can also omit `--sqlite` to run statements directly through JakeQL’s custom DBMS.
-
 
 
 ## License 📄
