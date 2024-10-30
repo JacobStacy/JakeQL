@@ -98,6 +98,7 @@ for sql_file in sql_files:
     except:
         pass
 
+    sql_file = "/sql_files/" + sql_file
     # Use sys.executable to get the current Python interpreter's path
     py_path = sys.executable
     cli_path = "cli.py"

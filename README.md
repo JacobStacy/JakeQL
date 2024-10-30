@@ -54,7 +54,7 @@ python test_project.py
 
 To execute SQL statements through the CLI to test JakeQL’s capabilities use the following.
 ```bash
-python cli.py test_sql_file.sql
+python cli.py <your_sql_file>
 ```
 
 You can also add `--sqlite` to run statements directly through SQLite for comparison.
